@@ -19,13 +19,12 @@ from axes.attempts import (
     ip_in_blacklist,
     ip_in_whitelist,
     is_user_lockable,
-    get_filter_kwargs,
+    get_client_parameters,
     get_user_attempts,
 )
 from axes.conf import settings
 from axes.models import AccessAttempt, AccessLog
 from axes.signals import user_locked_out
-from axes.utils import reset
 
 
 @override_settings(AXES_COOLOFF_TIME=datetime.timedelta(seconds=2))
@@ -198,7 +197,7 @@ class AccessAttemptTest(TestCase):
         self.test_failure_limit_once()
 
         # Reset the ip so we can try again
-        reset(ip='127.0.0.1')
+        AccessAttempt.objects.filter(ip_address='127.0.0.1').delete()
 
         # Make a login attempt again
         self.test_valid_login()
@@ -212,7 +211,7 @@ class AccessAttemptTest(TestCase):
         self.test_failure_limit_once()
 
         # Reset all attempts so we can try again
-        reset()
+        AccessAttempt.objects.all().delete()
 
         # Make a login attempt again
         self.test_valid_login()
@@ -222,7 +221,7 @@ class AccessAttemptTest(TestCase):
     )
     def test_get_filter_kwargs_user(self):
         self.assertEqual(
-            dict(get_filter_kwargs(self.username, self.ip_address, self.user_agent)),
+            dict(get_client_parameters(self.username, self.ip_address, self.user_agent)),
             {'username': self.username},
         )
 
@@ -233,7 +232,7 @@ class AccessAttemptTest(TestCase):
     )
     def test_get_filter_kwargs_ip(self):
         self.assertEqual(
-            dict(get_filter_kwargs(self.username, self.ip_address, self.user_agent)),
+            dict(get_client_parameters(self.username, self.ip_address, self.user_agent)),
             {'ip_address': self.ip_address},
         )
 
@@ -244,7 +243,7 @@ class AccessAttemptTest(TestCase):
     )
     def test_get_filter_kwargs_user_and_ip(self):
         self.assertEqual(
-            dict(get_filter_kwargs(self.username, self.ip_address, self.user_agent)),
+            dict(get_client_parameters(self.username, self.ip_address, self.user_agent)),
             {'username': self.username, 'ip_address': self.ip_address},
         )
 
@@ -255,7 +254,7 @@ class AccessAttemptTest(TestCase):
     )
     def test_get_filter_kwargs_ip_and_agent(self):
         self.assertEqual(
-            dict(get_filter_kwargs(self.username, self.ip_address, self.user_agent)),
+            dict(get_client_parameters(self.username, self.ip_address, self.user_agent)),
             {'ip_address': self.ip_address, 'user_agent': self.user_agent},
         )
 
@@ -266,7 +265,7 @@ class AccessAttemptTest(TestCase):
     )
     def test_get_filter_kwargs_user_ip_agent(self):
         self.assertEqual(
-            dict(get_filter_kwargs(self.username, self.ip_address, self.user_agent)),
+            dict(get_client_parameters(self.username, self.ip_address, self.user_agent)),
             {'username': self.username, 'ip_address': self.ip_address, 'user_agent': self.user_agent},
         )
 
@@ -311,7 +310,7 @@ class AccessAttemptTest(TestCase):
         self.assertTrue(cache.get.call_count)
         self.assertTrue(cache.set.call_count)
 
-    @patch('axes.utils.get_client_ip', return_value='127.0.0.1')
+    @patch('axes.utils.get_client_ip_address', return_value='127.0.0.1')
     def test_get_cache_key(self, _):
         """
         Test the cache key format.
@@ -348,7 +347,7 @@ class AccessAttemptTest(TestCase):
 
         self.assertEqual(cache_hash_key, get_cache_key(attempt))
 
-    @patch('axes.utils.get_client_ip', return_value='127.0.0.1')
+    @patch('axes.utils.get_client_ip_address', return_value='127.0.0.1')
     def test_get_cache_key_credentials(self, _):
         """
         Test the cache key format.
@@ -408,7 +407,7 @@ class AccessAttemptTest(TestCase):
         self.test_failure_limit_once()
         self.assertEqual(scope.signal_received, 1)
 
-        reset()
+        AccessAttempt.objects.all().delete()
 
         # Make another lockout
         self.test_failure_limit_once()
@@ -456,7 +455,7 @@ class AccessAttemptTest(TestCase):
 
         # reset the username only and make sure we can log in now even though
         # our IP has failed each time
-        reset(username=AccessAttemptTest.VALID_USERNAME)
+        AccessAttempt.objects.filter(username=AccessAttemptTest.VALID_USERNAME).delete()
         response = self._login(
             is_valid_username=True,
             is_valid_password=True,
@@ -471,13 +470,13 @@ class AccessAttemptTest(TestCase):
                 is_valid_username=False,
                 is_valid_password=False,
             )
-        # Check if we can still log in with valid user
+        # Check if we can still initialize in with valid user
         response = self._login(is_valid_username=True, is_valid_password=True)
         self.assertNotContains(response, self.LOGIN_FORM_KEY, status_code=302, html=True)
 
     def test_log_data_truncated(self):
         """
-        Test that query2str properly truncates data to the max_length (default 1024).
+        Test that get_query_str properly truncates data to the max_length (default 1024).
         """
 
         # An impossibly large post dict
